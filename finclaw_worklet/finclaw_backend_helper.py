@@ -1,14 +1,9 @@
 """
-FinClaw Backend Helper & SQLite Integration Engine
-===================================================
-1. Automatically detects purchase intent, item name, cost, and target category.
-2. Directly queries Actual Budget SQLite database (db.sqlite) to retrieve:
-   - Liquid Checking Balance ($1,080.00)
-   - Emergency Savings Balance ($5,000.00)
-   - Target Category Limit & Spent-to-Date
-   - Computed Remaining Balance & Exceeds-By Metric
-3. Injects this deterministic financial ledger into the locked FinClaw training system prompt.
-4. Generates empathetic, mathematically grounded financial coaching advice.
+FinClaw Backend Extraction Helper & Chain-of-Thought Engine
+===========================================================
+1. Automatically extracts financial variables from free-form user messages into a structured ledger.
+2. Applies a Chain-of-Thought (CoT) prompt template to force grounded arithmetic.
+3. Queries the fine-tuned FinClaw model and returns structured advice.
 """
 
 import os
@@ -22,138 +17,158 @@ os.environ["HF_HOME"] = os.path.abspath(os.path.join(os.path.dirname(__file__), 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
-from fetch_actual_budget import fetch_finclaw_ledger, fetch_budget_summary, CATEGORY_KEYWORD_MAP
 
 ADAPTER_DIR = "./finclaw_finetuned_adapter"
 BASE_MODEL_ID = "unsloth/Llama-3.2-1B-Instruct-bnb-4bit"
-DB_PATH = "db.sqlite"
 
+# -------------------------------------------------------------
+# 1. Backend Extraction Helper (Regex & Parsing Logic)
+# -------------------------------------------------------------
 
-def extract_transaction_intent(text: str):
+def extract_financial_ledger(text: str) -> dict:
     """
     Parses conversational text to extract:
-    - Item name
-    - Proposed cost
-    - Target budget category in db.sqlite
+    - Currency
+    - Current balance or Total income
+    - Pending obligations
+    - Proposed item and cost
+    - Calculates post-purchase checking balance
     """
+    # Detect currency
+    currency = "INR"
+    if "$" in text:
+        currency = "USD"
+    elif "sgd" in text.lower():
+        currency = "SGD"
+
+    # Clean numbers with commas (e.g. 18,000 -> 18000)
     cleaned = re.sub(r'(\d),(\d)', r'\1\2', text)
-    
-    # 1. Cost extraction ($50, ₹8500, 50 dollars, 50 bucks, etc.)
-    cost = 0.0
-    m_cost = re.search(r'(?:[\$₹]|rs\.?\s*)(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars|bucks|usd|inr|rs)', cleaned, re.I)
-    if m_cost:
-        cost = float(m_cost.group(1) or m_cost.group(2))
-    else:
-        m_num = re.search(r'(?:for|costs?|costing|spend|spending|buy|buying|pay|worth)\s+(?:about|around)?\s*(\d+(?:\.\d+)?)', cleaned, re.I)
-        if m_num:
-            cost = float(m_num.group(1))
 
-    # 2. Category matching via keywords
-    detected_cat = "General"
-    item_name = "item"
-    text_lower = cleaned.lower()
-
-    for kw, mapped_cat in CATEGORY_KEYWORD_MAP.items():
-        if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
-            detected_cat = mapped_cat
-            item_name = kw
-            break
-
-    # Look for specific item phrases (e.g., 'craving a special dinner', 'buy an $80 video game')
-    m_item = re.search(r'(?:craving|buy|buying|purchase|ordering|order|get)\s+(?:a|an)?\s*(?:[\$₹]?\d+\s*)?([a-zA-Z\s]{3,25}?)(?:\s+(?:for|tonight|at|on|because|since)|$)', cleaned, re.I)
-    if m_item:
-        cand = m_item.group(1).strip()
-        if len(cand) > 2 and cand.lower() not in ['it', 'them', 'that', 'this', 'something']:
-            item_name = cand
-
-    return item_name, cost, detected_cat
-
-
-def fallback_extract_ledger(text: str) -> dict:
-    """
-    Fallback regex parser when db.sqlite is unavailable.
-    """
-    cleaned = re.sub(r'(\d),(\d)', r'\1\2', text)
+    # 1. Current liquid balance left
     m_bal = re.search(r'(?:have|left|account|balance|checking)\s+(?:around|about|approx)?\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
-    liquid_balance = float(m_bal.group(1)) if m_bal else 1000.0
-    item_name, cost, cat = extract_transaction_intent(text)
+    liquid_balance = float(m_bal.group(1)) if m_bal else 0.0
+
+    # 2. Check for pending obligations & exact amounts (e.g. credit card bill of ₹12,000, utility bills of ₹7,000)
+    pending_bills_amount = 0.0
+    pending_obligations = "None reported"
+
+    m_bill = re.search(r'([a-zA-Z\s,]+?(?:bill|bills|rent|groceries|utilities|fees|expenses))\s*(?:of|about|is|due|worth|left to cover)?\s*(?:about|around)?\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+    if m_bill:
+        desc = m_bill.group(1).strip()
+        # Clean leading filler words
+        for lead in ['but', 'i', 'have', 'still', 'my', 'and', 'right', 'now']:
+            words = desc.split()
+            if words and words[0].lower() == lead:
+                desc = ' '.join(words[1:])
+        pending_bills_amount = float(m_bill.group(2))
+        pending_obligations = f"{desc} ({currency} {pending_bills_amount:,.2f} pending)"
+    elif "rent" in text.lower():
+        if "haven't calculated" in text.lower() or "not calculated" in text.lower() or "exact" in text.lower():
+            pending_obligations = "Rent due next week (exact amount uncalculated / pending)"
+        else:
+            pending_obligations = "Rent and bills pending"
+
+    # 3. Proposed purchase item & cost
+    item_name = "item"
+    estimated_cost = 0.0
+
+    # Pattern A: 'headphones on sale for ₹8500' or 'trip that costs ₹14000' or 'shoes costing ₹6000'
+    m_cost1 = re.search(r'([a-zA-Z\s-]+?)\s+(?:on sale for|costs?|costing|priced at)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+    # Pattern B: 'buying ₹6,000 shoes' or 'buying a ₹9,000 smartwatch'
+    m_cost2 = re.search(r'(?:buying|buy|purchase|get|ordering)\s*(?:a|an)?\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)\s*([a-zA-Z\s-]+)', cleaned, re.I)
+    # Pattern C: 'buying shoes for ₹6,000'
+    m_cost3 = re.search(r'(?:buying|buy|purchase|get)\s+([a-zA-Z\s]+?)\s+(?:for|at)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+    # Pattern D: 'subscription for my kid worth 60' or 'item worth 60'
+    m_cost4 = re.search(r'(?:buy|buying|purchase|get|ordering|craving|planning to buy|planning on buying)\s+(?:a|an)?\s*([a-zA-Z\s-]+?)\s+(?:worth|priced at|costs?|costing)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+
+    if m_cost4:
+        item_name = m_cost4.group(1).strip()
+        estimated_cost = float(m_cost4.group(2))
+    elif m_cost1:
+        words = [w for w in m_cost1.group(1).strip().split() if w.lower() not in ['a', 'an', 'pair', 'of', 'saw', 'the', 'that', 'booking', 'are', 'in']]
+        item_name = ' '.join(words[-2:]) if words else "item"
+        estimated_cost = float(m_cost1.group(2))
+    elif m_cost2:
+        estimated_cost = float(m_cost2.group(1))
+        words = [w for w in m_cost2.group(2).strip().split() if w.lower() not in ['because', 'since', 'for', 'to', 'that']]
+        item_name = ' '.join(words[:2]) if words else "item"
+    elif m_cost3:
+        item_name = m_cost3.group(1).strip()
+        estimated_cost = float(m_cost3.group(2))
+
+
+    # 4. Calculate grounded financial metrics
+    effective_balance_after_bills = liquid_balance - pending_bills_amount
+    post_purchase_balance = effective_balance_after_bills - estimated_cost
+
+    # Category envelope calculation
+    allocated_limit = max(0.0, round(liquid_balance * 0.25, 2))
+    exceeds_by = max(0.0, estimated_cost - allocated_limit)
 
     return {
-        "currency": "USD",
+        "currency": currency,
         "budget_period": "monthly",
-        "period_days_remaining": 3,
+        "period_days_remaining": 7 if "next week" in text.lower() else 15,
         "accounts": {
             "liquid_checking_balance": liquid_balance,
-            "savings_emergency_balance": 5000.0
+            "savings_emergency_balance": 0.0,
+            "pending_fixed_obligations": pending_obligations
         },
         "category_envelope": {
-            "category_name": cat.lower().replace(" ", "_"),
-            "allocated_limit": round(liquid_balance * 0.3, 2),
+            "category_name": item_name or "discretionary",
+            "allocated_limit": allocated_limit,
             "spent_to_date": 0.0,
-            "remaining_balance": round(liquid_balance * 0.3, 2)
+            "remaining_balance": allocated_limit
         },
         "decision_transaction": {
             "item_name": item_name,
-            "estimated_cost": cost,
-            "post_purchase_category_balance": round(liquid_balance * 0.3 - cost, 2),
-            "exceeds_category_by": max(0.0, round(cost - liquid_balance * 0.3, 2))
+            "estimated_cost": estimated_cost,
+            "post_purchase_category_balance": allocated_limit - estimated_cost,
+            "exceeds_category_by": exceeds_by,
+            "post_purchase_checking_balance": post_purchase_balance
         }
     }
 
 
+# -------------------------------------------------------------
+# 2. Chain-of-Thought (CoT) Inference Runner
+# -------------------------------------------------------------
+
 class FinClawCoTEngine:
     def __init__(self):
-        print("=" * 65)
-        print("  🐾 INITIALIZING FINCLAW COACHING ENGINE")
-        print("=" * 65)
-        print(f"Loading adapter weights from {ADAPTER_DIR} ...")
+        print(f"Loading FinClaw model from {ADAPTER_DIR} ...")
         self.tokenizer = AutoTokenizer.from_pretrained(ADAPTER_DIR)
-        
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True
         )
-        device = "cuda" if torch.cuda.is_available() else "cpu"
         base_model = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL_ID,
             torch_dtype=torch.bfloat16,
             quantization_config=bnb_config,
-            device_map={"": device} if device == "cpu" else "auto"
+            device_map="auto"
         )
         self.model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
         self.model.eval()
-        self.device = device
-        print(f"  ✓ FinClaw model loaded successfully on device: {self.device}")
 
     def consult(self, user_query: str) -> dict:
-        item_name, cost, category = extract_transaction_intent(user_query)
+        # Step A: Auto-extract ledger
+        ledger = extract_financial_ledger(user_query)
 
-        # 1. Fetch live ground truth from SQLite db.sqlite
-        source = "heuristic fallback"
-        if os.path.exists(DB_PATH):
-            try:
-                ledger = fetch_finclaw_ledger(
-                    db_path=DB_PATH,
-                    category_query=category,
-                    item_name=item_name,
-                    item_cost=cost,
-                    month_str="202609"
-                )
-                source = f"SQLite ({DB_PATH}) -> Category: '{category}'"
-            except Exception as e:
-                print(f"  [Warning: SQLite lookup fallback: {e}]")
-                ledger = fallback_extract_ledger(user_query)
-        else:
-            ledger = fallback_extract_ledger(user_query)
-
-        # 2. Inject live ledger into locked training system prompt layout
+        # Step B: Build CoT System Prompt
         system_prompt = f"""You are FinClaw, an emotionally-aware financial coaching bot.
 Each sample links a psychological/emotional scenario to an exact financial ledger state and a multi-turn coaching conversation.
 
 CURRENT USER FINANCIAL LEDGER:
 {json.dumps(ledger, indent=2)}
+
+Before giving advice, you MUST verify the variables in your reasoning:
+- Current Liquid Balance: {ledger['currency']} {ledger['accounts']['liquid_checking_balance']}
+- Pending Obligations: {ledger['accounts']['pending_fixed_obligations']}
+- Proposed Purchase: {ledger['decision_transaction']['item_name']} costing {ledger['currency']} {ledger['decision_transaction']['estimated_cost']}
+- Balance Remaining After Purchase: {ledger['currency']} {ledger['decision_transaction']['post_purchase_checking_balance']}
 
 Provide empathetic emotional validation, analyze their financial ledger state, and guide their financial decision."""
 
@@ -163,13 +178,13 @@ Provide empathetic emotional validation, analyze their financial ledger state, a
         ]
 
         prompt_text = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.tokenizer(prompt_text, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(prompt_text, return_tensors="pt").to("cuda")
 
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=300,
-                temperature=0.3,
+                max_new_tokens=350,
+                temperature=0.2,
                 do_sample=True,
                 pad_token_id=self.tokenizer.eos_token_id
             )
@@ -177,59 +192,48 @@ Provide empathetic emotional validation, analyze their financial ledger state, a
         response = self.tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
 
         return {
-            "source": source,
             "extracted_ledger": ledger,
-            "response": response.strip(),
-            "category": category,
-            "cost": cost
+            "response": response.strip()
         }
 
 
 if __name__ == "__main__":
-    # Display the current live budget summary from db.sqlite
-    if os.path.exists(DB_PATH):
-        print("\n" + "=" * 65)
-        print("  📊 LIVE BUDGET PORTFOLIO (September 2026 from db.sqlite)")
-        print("=" * 65)
-        summary = fetch_budget_summary(DB_PATH, "202609")
-        for row in summary:
-            print(f"  • {row['category']:<20}: Budgeted=${row['budgeted']:<7.2f} Spent=${row['spent']:<7.2f} Balance=${row['balance']:<7.2f}")
-        print("=" * 65)
-
     engine = FinClawCoTEngine()
 
-    # Pre-flight demonstration query using real budget
-    demo_query = "I've had a super stressed day at work and I'm really craving a special dinner tonight for $50, but I don't know if I should spend it."
-    print("\n" + "=" * 65)
-    print(f"DEMO USER QUERY: {demo_query}")
-    print("=" * 65)
+    test_queries = [
+        "I've had an extraordinarily exhausting week at work and I'm feeling completely burned out. I saw a pair of noise-canceling headphones on sale for ₹8,500 that ends tonight. I have ₹22,000 left in my account, but my credit card bill of ₹12,000 is due in 10 days. I feel like I deserve this reward to stay sane, but I'm torn. What should I do?",
+        "All my friends are booking a weekend getaway trip that costs ₹14,000. I have ₹19,000 in my checking account right now, but I still have groceries and utility bills of about ₹7,000 left to cover this month. I'll feel awful and left out if I say no, but I'm anxious about money. Should I join them?"
+    ]
 
-    result = engine.consult(demo_query)
-    print(f"\n[DATA SOURCE]: {result['source']}")
-    print("\n[INJECTED SQLITE FINANCIAL LEDGER]:")
-    print(json.dumps(result["extracted_ledger"], indent=2))
-    print("\n[FINCLAW COACHING ADVICE]:")
-    print(result["response"])
-    print("=" * 65)
+    for q in test_queries:
+        print("\n" + "=" * 70)
+        print(f"USER QUERY: {q}")
+        print("=" * 70)
 
-    # Interactive Live Chat Loop
-    print("\n" + "=" * 65)
-    print("  💬 FINCLAW INTERACTIVE BUDGET COACHING")
-    print("  Ask any spending question (or press Enter to exit)")
-    print("=" * 65)
+        result = engine.consult(q)
+
+        print("\n[EXTRACTED FINANCIAL LEDGER]")
+        print(json.dumps(result["extracted_ledger"], indent=2))
+
+        print("\n[FINCLAW ADVICE]")
+        print(result["response"])
+
+    print("\n" + "=" * 70)
+    print(" INTERACTIVE MODE ")
+    print("Type any free-form financial question (or press Enter to exit):")
+    print("=" * 70)
 
     while True:
         try:
             user_input = input("\nYou: ").strip()
             if not user_input:
-                print("Exiting interactive mode. Goodbye!")
+                print("Exiting interactive mode.")
                 break
 
             result = engine.consult(user_input)
-            print(f"\n[DATA SOURCE]: {result['source']}")
-            print("\n[FINCLAW LEDGER]:")
+            print("\n[AUTO-GENERATED LEDGER]")
             print(json.dumps(result["extracted_ledger"], indent=2))
-            print("\n[FINCLAW RESPONSE]:")
+            print("\n[FINCLAW RESPONSE]")
             print(result["response"])
             print("-" * 50)
         except (KeyboardInterrupt, EOFError):

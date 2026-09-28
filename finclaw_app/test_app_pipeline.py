@@ -43,8 +43,26 @@ def test_pipeline():
     print("\nFinClaw Response 2 (With Memory):")
     print(reply2.strip())
     print("\n" + "=" * 60)
-    print("SUCCESS: Multi-turn memory and live SQLite pipeline verified!")
+    print("Testing Turn 3: Netflix Subscription ($60)")
     print("=" * 60)
+    msg3 = "I'm really frustrated this week because of my over time work in office so I am planning to buy a new Netflix subscription for my kid worth 60 should i do it?"
+    cat3, item3, cost3 = extract_purchase_intent(msg3)
+    print(f"Extracted -> Category: {cat3}, Item: {item3}, Cost: ${cost3}")
+    assert cost3 == 60.0, f"Expected 60.0, got {cost3}"
+    assert cat3 == "Entertainment", f"Expected Entertainment, got {cat3}"
+
+    ledger3 = get_live_ledger_for_message(db_path, msg3)
+    print(f"Live Ledger -> Category: {ledger3['category_envelope']['category_name']}, Remaining: ${ledger3['category_envelope']['remaining_balance']}, Exceeds: ${ledger3['decision_transaction']['exceeds_category_by']}")
+    
+    stream3 = engine.stream_chat([{"role": "user", "content": msg3}], ledger3, max_new_tokens=150)
+    reply3 = "".join(list(stream3))
+    print("\nFinClaw Response 3:")
+    print(reply3.strip())
+
+    print("\n" + "=" * 60)
+    print("SUCCESS: Multi-turn memory, live SQLite pipeline, and Netflix categorization verified!")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     test_pipeline()

@@ -78,8 +78,13 @@ def extract_financial_ledger(text: str) -> dict:
     m_cost2 = re.search(r'(?:buying|buy|purchase|get|ordering)\s*(?:a|an)?\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)\s*([a-zA-Z\s-]+)', cleaned, re.I)
     # Pattern C: 'buying shoes for ₹6,000'
     m_cost3 = re.search(r'(?:buying|buy|purchase|get)\s+([a-zA-Z\s]+?)\s+(?:for|at)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+    # Pattern D: 'subscription for my kid worth 60' or 'item worth 60'
+    m_cost4 = re.search(r'(?:buy|buying|purchase|get|ordering|craving|planning to buy|planning on buying)\s+(?:a|an)?\s*([a-zA-Z\s-]+?)\s+(?:worth|priced at|costs?|costing)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
 
-    if m_cost1:
+    if m_cost4:
+        item_name = m_cost4.group(1).strip()
+        estimated_cost = float(m_cost4.group(2))
+    elif m_cost1:
         words = [w for w in m_cost1.group(1).strip().split() if w.lower() not in ['a', 'an', 'pair', 'of', 'saw', 'the', 'that', 'booking', 'are', 'in']]
         item_name = ' '.join(words[-2:]) if words else "item"
         estimated_cost = float(m_cost1.group(2))
@@ -90,6 +95,7 @@ def extract_financial_ledger(text: str) -> dict:
     elif m_cost3:
         item_name = m_cost3.group(1).strip()
         estimated_cost = float(m_cost3.group(2))
+
 
     # 4. Calculate grounded financial metrics
     effective_balance_after_bills = liquid_balance - pending_bills_amount

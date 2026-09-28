@@ -24,7 +24,7 @@ def extract_purchase_intent(text: str) -> Tuple[str, str, float]:
                 cost = float(g)
                 break
     if cost == 0.0:
-        m_alt = re.search(r'(?:costs?|for|costing|at|priced at)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
+        m_alt = re.search(r'(?:costs?|for|costing|at|priced at|worth|spending|paying|about|around|of)\s*(?:[₹$]|rs\.?\s*)?(\d+(?:\.\d+)?)', cleaned, re.I)
         if m_alt:
             cost = float(m_alt.group(1))
 
@@ -33,20 +33,22 @@ def extract_purchase_intent(text: str) -> Tuple[str, str, float]:
     item_name = "Discretionary Expense"
 
     lower_text = text.lower()
-    for kw, mapped_cat in CATEGORY_KEYWORD_MAP.items():
+    # Sort keywords by descending length so multi-word matches take precedence
+    for kw in sorted(CATEGORY_KEYWORD_MAP.keys(), key=len, reverse=True):
         if re.search(r'\b' + re.escape(kw) + r'\b', lower_text):
-            category_hint = mapped_cat
+            category_hint = CATEGORY_KEYWORD_MAP[kw]
             item_name = kw.capitalize()
             break
 
-    # Look for item nouns after 'buy', 'get', 'ordering', 'craving'
-    m_noun = re.search(r'(?:buy|buying|get|ordering|craving|purchase)\s+(?:a|an)?\s*([a-zA-Z\s]+?)(?:\s+for|\s+tonight|\s+today|\s+costing|\.|\?|$)', cleaned, re.I)
+    # Look for item nouns after 'buy', 'get', 'ordering', 'craving', 'planning to buy', etc.
+    m_noun = re.search(r'(?:buy|buying|get|ordering|craving|purchase|planning to buy|planning on buying|subscribe to|subscribing to)\s+(?:a|an)?\s*([a-zA-Z\s]+?)(?:\s+for|\s+worth|\s+tonight|\s+today|\s+costing|\.|\?|$)', cleaned, re.I)
     if m_noun:
         found_item = m_noun.group(1).strip()
-        if len(found_item.split()) <= 4 and found_item.lower() not in ['it', 'something', 'this', 'that']:
+        if len(found_item.split()) <= 5 and found_item.lower() not in ['it', 'something', 'this', 'that']:
             item_name = found_item.capitalize()
 
     return category_hint, item_name, cost
+
 
 def get_live_ledger_for_message(db_path: str, user_text: str, active_ledger: Dict[str, Any] = None) -> Dict[str, Any]:
     """
