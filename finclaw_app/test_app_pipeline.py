@@ -60,8 +60,18 @@ def test_pipeline():
     print(reply3.strip())
 
     print("\n" + "=" * 60)
-    print("SUCCESS: Multi-turn memory, live SQLite pipeline, and Netflix categorization verified!")
+    print("Testing Turn 4: LLM Classifier Fallback on Novel Purchase (Ceramic pottery wheel $80)")
     print("=" * 60)
+    msg4 = "I feel so uninspired lately, thinking about buying a ceramic pottery wheel for 80"
+    cat_direct = engine.classify_category(msg4)
+    print(f"Direct LLM Category Classification -> '{cat_direct}'")
+
+    ledger4 = get_live_ledger_for_message(db_path, msg4, engine=engine)
+    print(f"Cascading Ledger -> Resolved Category: '{ledger4['category_envelope']['category_name']}', Cost: ${ledger4['decision_transaction']['estimated_cost']}")
+    assert ledger4['decision_transaction']['estimated_cost'] == 80.0
+    print("\nSUCCESS: Both Fast Path and LLM Fallback Classification verified!")
+    print("=" * 60)
+
 
 
 if __name__ == "__main__":

@@ -50,12 +50,28 @@ def extract_purchase_intent(text: str) -> Tuple[str, str, float]:
     return category_hint, item_name, cost
 
 
-def get_live_ledger_for_message(db_path: str, user_text: str, active_ledger: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_live_ledger_for_message(
+    db_path: str,
+    user_text: str,
+    active_ledger: Dict[str, Any] = None,
+    engine: Any = None
+) -> Dict[str, Any]:
     """
     Checks if a new purchase is mentioned; if so, queries db.sqlite.
-    If not and an active ledger exists, retains or updates the active ledger.
+    Uses Cascading Hybrid resolution:
+      1. Fast Regex/Dictionary (<0.05ms)
+      2. If category is 'General' but a purchase is detected, invokes LLM classifier fallback (~150ms)
     """
     cat_hint, item_name, cost = extract_purchase_intent(user_text)
+
+    # Cascading Fallback: If regex didn't find a specific category, invoke LLM classifier
+    if cat_hint == "General" and (cost > 0.0 or any(w in user_text.lower() for w in ["buy", "purchase", "order", "get", "subscribe"])) and engine is not None:
+        try:
+            llm_cat = engine.classify_category(user_text)
+            if llm_cat and llm_cat != "General":
+                cat_hint = llm_cat
+        except Exception as e:
+            print(f"[Classifier] LLM fallback error: {e}")
 
     if cost > 0.0 or cat_hint != "General":
         # New purchase decision detected!
@@ -66,6 +82,7 @@ def get_live_ledger_for_message(db_path: str, user_text: str, active_ledger: Dic
             item_cost=cost,
             month_str="202609"
         )
+
     elif active_ledger:
         # Retain current ledger for follow-up conversational turns
         return active_ledger

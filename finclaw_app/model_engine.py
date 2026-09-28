@@ -123,3 +123,62 @@ Provide empathetic emotional validation, analyze their financial ledger state, a
             yield token_text
 
         thread.join()
+
+    def classify_category(self, user_text: str, available_categories: Optional[List[str]] = None) -> str:
+        """
+        Fast 1-step LLM category classifier for purchases that bypass regex/dictionary matching.
+        Generates <= 6 tokens in ~150-250ms on GPU.
+        """
+        if available_categories is None:
+            available_categories = [
+                "Food",
+                "Entertainment",
+                "Personal Care",
+                "Bills",
+                "Bills (Flexible)",
+                "Rent/housing",
+                "Savings",
+                "General"
+            ]
+
+        cats_str = ", ".join(available_categories)
+        messages = [
+            {
+                "role": "system",
+                "content": f"You are a concise financial transaction classifier. Categorize the user's intended purchase into EXACTLY ONE of these categories: [{cats_str}]. Reply ONLY with the category name, nothing else."
+            },
+            {
+                "role": "user",
+                "content": f"Purchase: '{user_text}'\nCategory:"
+            }
+        ]
+
+        prompt_text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        inputs = self.tokenizer(prompt_text, return_tensors="pt").to("cuda")
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=6,
+                temperature=0.1,
+                do_sample=False,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+
+        raw_output = self.tokenizer.decode(
+            outputs[0][inputs["input_ids"].shape[1]:],
+            skip_special_tokens=True
+        ).strip()
+
+        # Strict substring matching against known categories
+        for cat in available_categories:
+            if cat.lower() in raw_output.lower():
+                return cat
+
+        return "General"
+

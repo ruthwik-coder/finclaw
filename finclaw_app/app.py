@@ -179,8 +179,10 @@ with tab_chat:
         ledger = get_live_ledger_for_message(
             db_path=DB_PATH,
             user_text=prompt,
-            active_ledger=st.session_state.active_ledger if memory_enabled else None
+            active_ledger=st.session_state.active_ledger if memory_enabled else None,
+            engine=engine
         )
+
         st.session_state.active_ledger = ledger
 
         # 4. Generate streaming response from FinClaw GPU engine
