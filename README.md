@@ -68,27 +68,35 @@ CURRENT USER FINANCIAL LEDGER:
 }
 ```
 
-### 2. Deterministic Arithmetic Architecture
+### 2. Cascading Hybrid Intent Engine & Deterministic Architecture
 ```
-User Query ("Can I buy these shoes for ₹4,500?")
-                      │
-                      ▼
- ┌──────────────────────────────────────────────┐
- │   SQLite Actual Budget Database (db.sqlite)   │
- │   - Fetches checking balance: ₹18,000        │
- │   - Fetches envelope limit: ₹2,000           │
- │   - Deterministic deficit: -₹2,500           │
- └──────────────────────┬───────────────────────┘
-                        │ Injects JSON Ledger Contract
-                        ▼
- ┌──────────────────────────────────────────────┐
- │   Fine-Tuned Llama-3.2-1B Adapter (FinClaw)  │
- │   - Acknowledges user fatigue & emotional urge│
- │   - Cites exact ₹2,500 deficit from ledger   │
- │   - Protects pending rent obligations        │
- │   - Recommends 48-hour cooling-off period    │
- └──────────────────────────────────────────────┘
+User Query ("Planning to buy a new Netflix subscription for my kid worth $60")
+                              │
+                              ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ Cascading Hybrid Intent Engine (intent_helper.py)           │
+ │ 1. Fast-Path Lexicon (<0.05ms): Matches 150+ brands/services│
+ │ 2. LLM Classifier Fallback (~150ms): Classifies novel items│
+ │    strictly into the 8 SQLite budget envelopes              │
+ └────────────────────────────┬────────────────────────────────┘
+                              │ Resolved: "Entertainment", $60.00
+                              ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ SQLite Actual Budget Database (db.sqlite)                   │
+ │ - Fetches checking balance: $1,080.00                       │
+ │ - Fetches entertainment envelope: $100 budget, $45 spent    │
+ │ - Computes deterministic deficit: $60 - $55 = $5.00 OVER    │
+ └────────────────────────────┬────────────────────────────────┘
+                              │ Injects Ground-Truth JSON Ledger Contract
+                              ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │ Fine-Tuned Llama-3.2-1B Adapter (FinClaw Engine)            │
+ │ - Validates office exhaustion / burnout with empathy        │
+ │ - Explicitly cites $5.00 deficit from injected ledger       │
+ │ - Recommends cooling-off period to prevent impulse regret   │
+ └─────────────────────────────────────────────────────────────┘
 ```
+
 
 ### 3. Multi-Turn Memory & Chat Formatting
 FinClaw uses the native Llama 3 chat template (`<|begin_of_text|><|start_header_id|>...`). For multi-turn dialogue, maintain a sliding window of the last **6 messages (3 conversation turns)**:
@@ -117,8 +125,19 @@ pip install -r requirements.txt
 ```
 
 ### 2. Launching the Interactive Streamlit Web App
-Launch the full interactive chat interface connected to the live SQLite budget:
+You can launch the web application in two ways:
+
+#### Option A: 1-Click Batch Launcher (Windows)
+Double-click **`run_demo.bat`** in the project root. It will automatically detect your virtual environment, launch Streamlit, and open your browser at `http://localhost:8501`.
+
+#### Option B: From Command Prompt / Terminal
+From the project root directory:
 ```bash
+# Windows Direct Path (Recommended)
+.venv\Scripts\streamlit.exe run finclaw_app\app.py
+
+# Or activate the virtual environment first
+.venv\Scripts\activate
 streamlit run finclaw_app/app.py
 ```
 Open your browser at `http://localhost:8501`. Features include:
@@ -126,6 +145,7 @@ Open your browser at `http://localhost:8501`. Features include:
 * Multi-turn chat memory across conversation turns.
 * Live inspection of SQLite categories and account balances.
 * Evaluation & Benchmark scorecard view.
+
 
 ### 3. Running the Automated Benchmark Suite
 Run the 8-scenario adversarial automated benchmark to evaluate accuracy, arithmetic grounding, latency, and VRAM consumption:
