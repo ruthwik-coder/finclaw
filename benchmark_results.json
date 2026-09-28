@@ -1,0 +1,119 @@
+{
+  "timestamp": "2026-09-28 10:28:05",
+  "metrics": {
+    "overall_accuracy_pct": 87.5,
+    "arithmetic_grounding_pct": 100.0,
+    "hallucination_resistance_pct": 100.0,
+    "coaching_alignment_pct": 62.5,
+    "avg_tokens_per_second": 11.4,
+    "avg_response_time_seconds": 4.79,
+    "peak_vram_gb": 1.07,
+    "total_tests": 8
+  },
+  "test_results": [
+    {
+      "test_id": "TC-01",
+      "scenario": "Deficit Impulse Spending",
+      "query": "I have \u20b918,000 left. I want to buy a \u20b99,000 smartwatch. Should I buy it?",
+      "response": "You have \u20b918,000 remaining in your checking account, and this smartwatch costs \u20b99,000. Buying it would put you \u20b96,000 over your budget. Since you are saving for a major goal, it might be better to wait until you have a clear plan for the remaining \u20b918,000.",
+      "tokens": 65,
+      "time_seconds": 6.84,
+      "tokens_per_second": 9.5,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": true,
+      "overall_status": "PASS"
+    },
+    {
+      "test_id": "TC-02",
+      "scenario": "Uncalculated Obligation",
+      "query": "I have \u20b912,000 left. I need to pay rent next week, but haven't calculated the exact rent. Should I buy \u20b96,000 shoes?",
+      "response": "You have \u20b912,000 in your checking account, and your apparel budget is at \u20b92,000. Buying the shoes would put you \u20b94,000 over your limit. Since you are saving for a major goal, it might be better to wait until after rent is paid to avoid dipping into your emergency fund.",
+      "tokens": 65,
+      "time_seconds": 5.16,
+      "tokens_per_second": 12.6,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": true,
+      "overall_status": "PASS"
+    },
+    {
+      "test_id": "TC-03",
+      "scenario": "Safe Planned Treat",
+      "query": "I had a productive week and want to celebrate with a $45 dinner tonight. Can I afford it?",
+      "response": "You have $250 remaining in your food budget, so the $45 dinner fits comfortably within your limits.",
+      "tokens": 22,
+      "time_seconds": 2.08,
+      "tokens_per_second": 10.6,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": true,
+      "overall_status": "PASS"
+    },
+    {
+      "test_id": "TC-04",
+      "scenario": "Pending High-Priority Bill",
+      "query": "I have \u20b922,000 in my account, but credit card bill of \u20b912,000 is due in 10 days. I want to buy \u20b98,500 headphones. What should I do?",
+      "response": "You have \u20b922,000 in your checking account, and your electronics budget is at \u20b95,500. Buying the \u20b98,500 headphones would put you \u20b93,000 over your limit. Since you are saving for a major goal, it is a high-risk purchase. Consider waiting until after payday to see if you can absorb the difference.",
+      "tokens": 71,
+      "time_seconds": 6.13,
+      "tokens_per_second": 11.6,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": true,
+      "overall_status": "PASS"
+    },
+    {
+      "test_id": "TC-05",
+      "scenario": "FOMO Severe Deficit",
+      "query": "All my friends are booking a \u20b914,000 trip. I have \u20b919,000, but bills of \u20b97,000 are left. Should I join them?",
+      "response": "You have \u20b919,000 in your checking account, but your travel budget is already at \u20b94,750. Spending \u20b914,000 on this trip would push your category balance to -\u20b99,250. Since you are already over budget by \u20b99,250, it is a high-risk decision. Consider sleeping on it and checking if the trip is still feasible after your next \u20b97,000 in bills are paid.",
+      "tokens": 88,
+      "time_seconds": 7.18,
+      "tokens_per_second": 12.3,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": true,
+      "overall_status": "PASS"
+    },
+    {
+      "test_id": "TC-06",
+      "scenario": "Exact Boundary Budget",
+      "query": "I have $60 left in my book budget and found textbooks for exactly $60. Can I get them?",
+      "response": "You have $60 remaining in your books envelope, so buying the $60 textbooks would leave you with $0. This would put you $0 over your monthly limit.",
+      "tokens": 35,
+      "time_seconds": 2.99,
+      "tokens_per_second": 11.7,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": false,
+      "overall_status": "WARN"
+    },
+    {
+      "test_id": "TC-07",
+      "scenario": "Exhausted Category Balance",
+      "query": "I am feeling stressed and want to buy a $30 game DLC. Can I do it?",
+      "response": "You are currently $15.0 over your gaming budget, and this purchase would push you to -$45.0. Since you are already $95.0 spent, this would exceed your limit by $45.0.",
+      "tokens": 46,
+      "time_seconds": 4.12,
+      "tokens_per_second": 11.2,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": false,
+      "overall_status": "WARN"
+    },
+    {
+      "test_id": "TC-08",
+      "scenario": "Emergency Fund Temptation",
+      "query": "My checking only has 350 SGD, but can't I just take 650 SGD from my emergency savings for this resort stay?",
+      "response": "You are looking at a 650 SGD resort, which would push your vacation budget to -650 SGD. Since your emergency fund is 4500 SGD, you are already over your 100 SGD limit for this category.",
+      "tokens": 45,
+      "time_seconds": 3.8,
+      "tokens_per_second": 11.8,
+      "arithmetic_pass": true,
+      "hallucination_pass": true,
+      "verdict_pass": false,
+      "overall_status": "WARN"
+    }
+  ]
+}

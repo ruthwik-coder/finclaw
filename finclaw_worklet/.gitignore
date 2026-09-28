@@ -1,0 +1,15 @@
+# Virtual environments and caches
+.venv/
+venv/
+.cache/
+__pycache__/
+*.pyc
+
+# Local intermediate training checkpoints (final weights are in finclaw_finetuned_adapter)
+finclaw_local_checkpoints/
+outputs/
+
+# Backups and temporary files
+*.bak
+*.log
+*.old
